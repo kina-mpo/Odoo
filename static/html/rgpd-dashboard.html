@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>Scanner RGPD Odoo</title>
+
+<!-- Tailwind : le CDN "play" ne peut pas être épinglé par SRI (script dynamique). -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Les 3 autres bibliothèques sont épinglées par SRI : elles s'exécutent dans la même origine que la clé API. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+        integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+        integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+        integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .bar-fill { transition: width .4s ease; }
+  @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+  :focus-visible { outline: 2px solid #714B67; outline-offset: 2px; }
+  @media print { .no-pdf { display: none !important; } body { background: #fff; } }
+</style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+<header class="bg-[#714B67] text-white">
+  <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-lg font-semibold">Scanner RGPD · Odoo</h1>
+      <p class="text-xs text-white/80">Inventaire technique des champs à caractère personnel — lecture seule, requêtes séquentielles et espacées</p>
+    </div>
+    <span class="text-xs bg-white/15 rounded px-2 py-1">Seuls des noms de champs, des compteurs et des dates sont lus</span>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-6">
+
+  <!-- ============ VUE 1 : CONNEXION ============ -->
+  <section id="viewLogin" class="max-w-xl mx-auto">
+    <form id="loginForm" class="bg-white rounded-lg border border-slate-200 p-6 space-y-4" autocomplete="off" novalidate>
+      <h2 class="text-base font-semibold">Connexion à l'instance</h2>
+
+      <div id="loginError" role="alert" class="hidden rounded border border-red-300 bg-red-50 text-red-800 text-sm p-3"></div>
+      <div id="httpsWarn" class="hidden rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm p-3">
+        ⚠️ Connexion non chiffrée (HTTP) : la clé API circulerait en clair.
+        <label class="mt-2 flex items-start gap-2"><input type="checkbox" id="httpOk" class="mt-1"> <span>Je comprends le risque et je souhaite continuer (déconseillé).</span></label>
+      </div>
+
+      <div>
+        <label for="apiKey" class="block text-sm font-medium mb-1">Clé API Odoo</label>
+        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" required
+               class="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="Collez la clé (jamais stockée)">
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="userId" class="block text-sm font-medium mb-1">User ID</label>
+          <input id="userId" type="number" min="1" step="1" inputmode="numeric" required
+                 class="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="ex : 2">
+        </div>
+        <div>
+          <label for="dbName" class="block text-sm font-medium mb-1">Base de données <span class="text-slate-500 font-normal">(optionnel)</span></label>
+          <input id="dbName" type="text" autocomplete="off" spellcheck="false"
+                 class="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="détectée automatiquement">
+        </div>
+      </div>
+
+      <div>
+        <label for="baseUrl" class="block text-sm font-medium mb-1">URL de l'instance Odoo <span class="text-slate-500 font-normal">(optionnel si la page est hébergée sur l'instance)</span></label>
+        <input id="baseUrl" type="url" autocomplete="off" spellcheck="false"
+               class="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="https://mon-instance.odoo.com">
+      </div>
+
+      <fieldset>
+        <legend class="text-sm font-medium mb-1">Mode de scan</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <label class="flex items-start gap-2 rounded border border-slate-300 p-3 text-sm cursor-pointer has-[:checked]:border-[#714B67] has-[:checked]:bg-[#714B67]/5">
+            <input type="radio" name="mode" value="quick" checked class="mt-1">
+            <span><b>Rapide</b><br><span class="text-slate-600">Modèles métier RGPD (≈100 max). Quelques minutes.</span></span>
+          </label>
+          <label class="flex items-start gap-2 rounded border border-slate-300 p-3 text-sm cursor-pointer has-[:checked]:border-[#714B67] has-[:checked]:bg-[#714B67]/5">
+            <input type="radio" name="mode" value="full" class="mt-1">
+            <span><b>Complet</b><br><span class="text-slate-600">Tous les modèles + métadonnées (archivés, dernière activité, logs).</span></span>
+          </label>
+        </div>
+      </fieldset>
+
+      <details class="text-sm">
+        <summary class="cursor-pointer text-slate-700">Options avancées</summary>
+        <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="transport" class="block font-medium mb-1">Protocole</label>
+            <select id="transport" class="w-full rounded border border-slate-300 px-3 py-2 bg-white">
+              <option value="jsonrpc">JSON-RPC /jsonrpc (Odoo 14 → 19)</option>
+              <option value="json2">JSON-2 /json/2 (Odoo 19+, Bearer)</option>
+            </select>
+          </div>
+          <div>
+            <label for="prudence" class="block font-medium mb-1">Prudence</label>
+            <select id="prudence" class="w-full rounded border border-slate-300 px-3 py-2 bg-white">
+              <option value="1">Normale (500 ms / 300 ms entre requêtes)</option>
+              <option value="3">Renforcée (×3, instance chargée)</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <button id="btnScan" type="submit"
+              class="w-full rounded bg-[#714B67] text-white font-medium py-2.5 text-sm hover:bg-[#5f3f56] disabled:opacity-60 disabled:cursor-not-allowed">
+        Scanner
+      </button>
+      <p class="text-xs text-slate-500">
+        La clé reste en mémoire le temps du scan puis est effacée. Aucun cookie, localStorage ou sessionStorage.
+        Recommandé : un utilisateur dédié en lecture, avec une clé API à expiration courte, supprimée après usage.
+      </p>
+    </form>
+  </section>
+
+  <!-- ============ VUE 2 : SCAN EN COURS ============ -->
+  <section id="viewScan" class="hidden max-w-2xl mx-auto">
+    <div class="bg-white rounded-lg border border-slate-200 p-6 space-y-5">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-base font-semibold" id="scanTitle">🔍 Scan en cours…</h2>
+        <button id="btnCancel" type="button" class="rounded border border-red-300 text-red-700 text-sm px-3 py-1.5 hover:bg-red-50 disabled:opacity-50" >Arrêter le scan</button>
+      </div>
+
+      <div>
+        <div class="flex justify-between text-xs text-slate-600 mb-1">
+          <span id="scanPhase">Initialisation</span><span id="scanPct" class="tnum">0 %</span>
+        </div>
+        <div class="h-3 rounded-full bg-slate-200 overflow-hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="scanBarWrap">
+          <div id="scanBar" class="bar-fill h-full bg-[#714B67]" style="width:0%"></div>
+        </div>
+        <p id="scanCurrent" class="text-xs text-slate-500 mt-1 truncate">&nbsp;</p>
+      </div>
+
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        <div class="flex justify-between"><dt class="text-slate-600">Modèles scannés</dt><dd id="stModels" class="font-medium tnum">0/0</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-600">Champs sensibles trouvés</dt><dd id="stFields" class="font-medium tnum">0</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-600">Enregistrements (modèles sensibles)</dt><dd id="stRecords" class="font-medium tnum">0</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-600">Requêtes envoyées</dt><dd id="stReq" class="font-medium tnum">0</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-600">Durée écoulée</dt><dd id="stElapsed" class="font-medium tnum">0 s</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-600">Durée estimée restante</dt><dd id="stEta" class="font-medium tnum">—</dd></div>
+      </dl>
+
+      <div id="scanNotice" class="hidden rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm p-3"></div>
+
+      <div>
+        <p class="text-xs font-medium text-slate-600 mb-1">Dernières requêtes</p>
+        <ol id="scanLog" class="text-xs font-mono text-slate-600 space-y-0.5 max-h-28 overflow-hidden"></ol>
+      </div>
+      <p class="text-xs text-slate-500">Gardez cet onglet ouvert : les navigateurs ralentissent les onglets masqués. Une seule requête est en vol à la fois.</p>
+    </div>
+  </section>
+
+  <!-- ============ VUE 3 : RAPPORT ============ -->
+  <section id="viewReport" class="hidden">
+    <div class="no-pdf flex flex-wrap gap-2 mb-4">
+      <button id="btnPdf" type="button" class="rounded bg-[#714B67] text-white text-sm px-4 py-2 hover:bg-[#5f3f56] disabled:opacity-60">Exporter en PDF</button>
+      <button id="btnCopy" type="button" class="rounded border border-slate-300 bg-white text-sm px-4 py-2 hover:bg-slate-50">Copier rapport</button>
+      <button id="btnAgain" type="button" class="rounded border border-slate-300 bg-white text-sm px-4 py-2 hover:bg-slate-50">Relancer un scan</button>
+      <span id="actionMsg" role="status" class="text-sm text-slate-600 self-center"></span>
+    </div>
+    <div id="reportContent" class="bg-white rounded-lg border border-slate-200 p-6 space-y-8"></div>
+  </section>
+
+</main>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   CONFIG — tous les garde-fous « anti-crash » sont ici
+   ===================================================================== */
+const CFG = {
+  REQ_TIMEOUT_MS: 5000,          // timeout par requête → « N/A »
+  LIMIT: 1000,                   // limit max par requête
+  DELAY_FIELDS_MS: 500,          // délai entre deux scans de champs
+  DELAY_COUNT_MS: 300,           // délai entre deux comptages / métadonnées
+  TOP_COUNT: 50,                 // nb max de modèles comptés
+  TOP_INACTIVE: 10,              // (complet) modèles pour lesquels on compte aussi les archivés
+  TOP_LAST_ACTIVITY: 15,         // (complet) modèles pour lesquels on lit la dernière activité
+  MAX_MODELS: { quick: 100, full: 400 },
+  // « Timeout global » : 60 s est incompatible avec un scan de 5 à 30 min ; le budget est donc par mode.
+  BUDGET_MS: { quick: 10 * 60e3, full: 30 * 60e3 },
+  BACKOFF_MAX: 8,                // multiplicateur max des délais si l'instance ralentit
+  STOP_AFTER_CONSEC_FAIL: 6      // échecs (timeout/réseau/5xx) consécutifs → arrêt, rapport partiel
+};
+
+/* Modèles exclus : préfixes demandés (base, ir, mail, web, website, theme) + techniques/inutiles */
+const EXCLUDE_RE = /^(base|ir|mail|web|website|theme|bus|iap|report|spreadsheet|digest|snailmail)\.|(^|\.)(wizard|report)(\.|$)/;
+
+/* Mode rapide : préfixes métier à forte teneur RGPD (ordre = priorité) */
+const QUICK_PREFIXES = ['res.partner', 'res.users', 'hr', 'crm', 'sale', 'purchase', 'account', 'survey',
+  'event', 'helpdesk', 'project', 'mailing', 'calendar', 'fleet', 'pos', 'stock.picking', 'payment', 'loyalty', 'contact'];
+
+/* Bonus de pertinence RGPD pour choisir les 50 modèles à compter */
+const CORE_BOOST = { 'res.partner': 50, 'hr.employee': 40, 'res.users': 40, 'hr.candidate': 30, 'hr.applicant': 30,
+  'crm.lead': 20, 'res.partner.bank': 20, 'hr.contract': 20, 'sale.order': 10, 'account.move': 10,
+  'purchase.order': 10, 'survey.user_input': 10, 'event.registration': 10 };
+const PERSONAL_NAME_MODELS = ['res.partner', 'res.users', 'hr.employee', 'hr.candidate', 'hr.applicant'];
+
+/* Détection des champs sensibles : première règle qui correspond l'emporte. w = poids RGPD. */
+const TXT = ['char', 'text', 'html'];
+const RULES = [
+  { cat: 'Santé',                  w: 3, types: [...TXT, 'boolean', 'selection'], re: /(^|_)(medical|health|disability|disabled|handicap)(_|$)/ },
+  { cat: 'Vie privée / état civil', w: 3, types: [...TXT, 'date', 'selection', 'integer', 'boolean'],
+    re: /^(birthday|birthdate|date_of_birth|place_of_birth|country_of_birth|gender|marital|children|spouse_.+|emergency_.+|religion)$/ },
+  { cat: 'Identifiants officiels', w: 3, types: TXT,
+    re: /^(vat|siret|siren|company_registry|ssnid|identification_id|passport_id|permit_no|visa_no|national_id|social_security.*|tax_id|l10n_[a-z]{2}_(siret|siren|ssn|nir|ape))$/ },
+  { cat: 'Bancaire',               w: 3, types: TXT, re: /^(acc_number|sanitized_acc_number|iban|bic|bank_acc_number|bank_bic|acc_holder_name|card_.+|credit_card.*)$/ },
+  { cat: 'Rémunération',           w: 2, types: ['float', 'monetary', 'integer'], re: /^(wage|salary|hourly_wage|contract_wage|gross_wage|net_wage)$/ },
+  { cat: 'Identité',               w: 2, types: TXT, re: /^(firstname|lastname|first_name|last_name|middle_name|partner_name|contact_name|complete_name|nickname|maiden_name|birth_name|private_car_plate)$/ },
+  { cat: 'Identité',               w: 2, types: ['char'], models: PERSONAL_NAME_MODELS, re: /^name$/ },
+  { cat: 'Contact',                w: 1, types: TXT, re: /(^|_)(email|mail|phone|mobile|fax|skype)(_|$)/ },
+  { cat: 'Adresse',                w: 1, types: [...TXT, 'float'], re: /^(street2?|city|zip|private_street2?|private_city|private_zip|partner_latitude|partner_longitude|address|address_home.*)$/ },
+  { cat: 'Connexion / technique',  w: 1, types: TXT, re: /^(ip|ip_address|remote_addr|user_agent|login)$/ },
+  { cat: 'Photo',                  w: 1, types: ['binary'], models: PERSONAL_NAME_MODELS, re: /^image_1920$/ }
+];
+
+/* =====================================================================
+   HELPERS
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtInt = (n) => (n == null ? 'N/A' : new Intl.NumberFormat('fr-FR').format(n));
+const fmtDur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); const m = Math.floor(s / 60); return m ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`; };
+const fmtDate = (odooUtc) => {
+  if (!odooUtc) return '-';
+  const d = new Date(String(odooUtc).replace(' ', 'T') + 'Z');   // Odoo renvoie de l'UTC naïf
+  return isNaN(d) ? '-' : d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+};
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoDay = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+class ApiError extends Error {
+  constructor(kind, message, extra) { super(message); this.kind = kind; Object.assign(this, extra); }
+}
+const FATAL_KINDS = ['abort', 'budget', 'overload'];   // interrompent tout le scan
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    if (signal) signal.addEventListener('abort', () => { clearTimeout(t); reject(new ApiError('abort', 'Scan interrompu')); }, { once: true });
+  });
+}
+
+/* =====================================================================
+   SESSION (en mémoire uniquement) + COUCHE HTTP
+   ===================================================================== */
+const S = {};   // état de session ; S.token est le seul secret
+function resetSession() {
+  Object.assign(S, {
+    token: null, uid: null, db: '', base: '', transport: 'jsonrpc', prudence: 1,
+    abort: new AbortController(), busy: false, lastEnd: 0, backoff: 1, consec: 0,
+    t0: 0, budget: 0, nReq: 0, endpoints: new Map()
+  });
+}
+resetSession();
+
+/* Efface le secret. La chaîne JS ne peut pas être « zéro-isée » ; on supprime toutes les références. */
+function destroySession() {
+  S.token = null;
+  try { S.abort.abort(); } catch (_) { /* déjà interrompu */ }
+  $('apiKey').value = '';
+}
+
+async function http(path, { headers = {}, body }) {
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, CFG.REQ_TIMEOUT_MS);
+  const onAbort = () => ctrl.abort();
+  S.abort.signal.addEventListener('abort', onAbort);
+  try {
+    const r = await fetch(S.base + path, {
+      method: 'POST', body: JSON.stringify(body), signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', ...headers },
+      credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer'
+    });
+    const j = await r.json().catch(() => null);
+    return { status: r.status, ok: r.ok, json: j };
+  } catch (e) {
+    if (S.abort.signal.aborted) throw new ApiError('abort', 'Scan interrompu');
+    if (timedOut) throw new ApiError('timeout', 'Timeout ' + CFG.REQ_TIMEOUT_MS / 1000 + ' s (instance occupée)');
+    throw new ApiError('network', 'Réseau/CORS : ' + (e.message || 'échec'));
+  } finally {
+    clearTimeout(timer);
+    S.abort.signal.removeEventListener('abort', onAbort);
+  }
+}
+
+const isAccessName = (n) => /AccessError|AccessDenied/.test(n || '');
+
+/* Transports : toutes les méthodes renvoient le résultat brut ou lèvent ApiError(kind: denied|odoo|http|timeout|network) */
+const transports = {
+  async jsonrpc(model, method, args, kwargs) {
+    const { status, ok, json } = await http('/jsonrpc', {
+      body: { jsonrpc: '2.0', method: 'call', id: ++S.nReq,
+              params: { service: 'object', method: 'execute_kw', args: [S.db, S.uid, S.token, model, method, args, kwargs || {}] } }
+    });
+    if (json && json.error) {
+      const d = json.error.data || {};
+      throw new ApiError(isAccessName(d.name) ? 'denied' : 'odoo', d.message || json.error.message || 'Erreur Odoo', { name: d.name });
+    }
+    if (!ok || !json) throw new ApiError('http', 'HTTP ' + status, { status });
+    return json.result;
+  },
+  async json2(model, method, args, kwargs) {
+    // JSON-2 : arguments nommés uniquement ; on traduit les 3 méthodes utilisées.
+    const body = method === 'read' ? { ids: args[0], ...(kwargs || {}) } : { domain: args[0], ...(kwargs || {}) };
+    const headers = { Authorization: 'bearer ' + S.token };
+    if (S.db) headers['X-Odoo-Database'] = S.db;
+    const { status, ok, json } = await http(`/json/2/${model}/${method}`, { headers, body });
+    if (!ok) {
+      if (status === 401) throw new ApiError('denied', 'Clé API refusée (401)', { status });
+      if (status === 403 || isAccessName(json && json.name)) throw new ApiError('denied', (json && json.message) || 'Accès refusé', { status });
+      throw new ApiError(status >= 500 ? 'http' : 'odoo', (json && json.message) || 'HTTP ' + status, { status });
+    }
+    return json;
+  }
+};
+
+/* Seul point de sortie réseau du scan : 1 requête à la fois, délai, backoff, budget, journal. */
+async function step(delayMs, label, fn) {
+  if (S.busy) throw new Error('Requête concurrente interdite (bug)');
+  S.busy = true;
+  try {
+    if (Date.now() - S.t0 > S.budget) throw new ApiError('budget', 'Durée maximale du scan atteinte');
+    const wait = S.lastEnd + delayMs * S.backoff * S.prudence - Date.now();
+    if (wait > 0) await sleep(wait, S.abort.signal);
+    if (S.abort.signal.aborted) throw new ApiError('abort', 'Scan interrompu');
+    const t = Date.now();
+    try {
+      const res = await fn();
+      S.consec = 0; S.backoff = Math.max(1, S.backoff * 0.8);
+      return res;
+    } catch (e) {
+      if (e.kind === 'timeout' || e.kind === 'network' || (e.kind === 'http' && e.status >= 500)) {
+        S.consec++; S.backoff = Math.min(CFG.BACKOFF_MAX, S.backoff * 2);
+        UI.notice(`Instance lente : délais multipliés par ${S.backoff}.`);
+        if (S.consec >= CFG.STOP_AFTER_CONSEC_FAIL) throw new ApiError('overload', 'Trop d\'échecs consécutifs : arrêt pour protéger l\'instance');
+      }
+      throw e;
+    } finally {
+      S.lastEnd = Date.now();
+      S.endpoints.set(label, (S.endpoints.get(label) || 0) + 1);
+      UI.logReq(label, Date.now() - t);
+    }
+  } finally { S.busy = false; }
+}
+
+const api = {
+  searchRead: (model, domain, fields, o = {}) => transports[S.transport](model, 'search_read', [domain],
+    { fields, limit: Math.min(o.limit || CFG.LIMIT, CFG.LIMIT), ...(o.order ? { order: o.order } : {}) }),
+  searchCount: (model, domain) => transports[S.transport](model, 'search_count', [domain], {}),
+  read: (model, ids, fields) => transports[S.transport](model, 'read', [ids], { fields })
+};
+
+/* =====================================================================
+   AUTHENTIFICATION (phase 0)
+   ===================================================================== */
+async function rpcService(service, method, args) {
+  const { ok, json, status } = await http('/jsonrpc', { body: { jsonrpc: '2.0', method: 'call', id: ++S.nReq, params: { service, method, args } } });
+  if (json && json.error) throw new ApiError('odoo', (json.error.data && json.error.data.message) || json.error.message);
+  if (!ok) throw new ApiError('http', 'HTTP ' + status, { status });
+  return json.result;
+}
+
+async function detectVersion() {
+  try { const v = await rpcService('common', 'version', []); return v && v.server_version; } catch (_) { return null; }
+}
+
+async function resolveDb(explicit) {
+  if (explicit) return explicit;
+  // Sur odoo.sh / odoo.com, le nom de la base est le premier label du hostname.
+  const guess = new URL(S.base).hostname.split('.')[0];
+  try {
+    const list = await rpcService('db', 'list', []);
+    if (Array.isArray(list) && list.length === 1) return list[0];
+    if (Array.isArray(list) && list.includes(guess)) return guess;
+    if (Array.isArray(list) && list.length) throw new ApiError('odoo', 'Plusieurs bases disponibles (' + list.join(', ') + ') : précisez la base de données.');
+  } catch (e) { if (e.message.startsWith('Plusieurs bases')) throw e; /* db.list désactivé : on devine */ }
+  return guess;
+}
+
+async function authenticate(opts) {
+  S.base = opts.base; S.uid = opts.uid; S.token = opts.key; S.transport = opts.transport; S.prudence = opts.prudence;
+  const version = await detectVersion();
+  if (S.transport === 'jsonrpc') S.db = await resolveDb(opts.db); else S.db = opts.db || '';
+  try {
+    const r = await transports[S.transport]('res.users', 'read', [[S.uid]], { fields: ['name', 'login'] });
+    if (!Array.isArray(r) || !r.length) throw new ApiError('denied', 'Utilisateur introuvable');
+    return { version, userName: r[0].name };
+  } catch (e) {
+    if (e.kind === 'denied') throw new ApiError('auth', 'Authentification refusée : vérifiez la clé API, le User ID et la base "' + S.db + '".');
+    if (/does not exist|FATAL|database/i.test(e.message)) throw new ApiError('auth', 'Base de données introuvable ("' + S.db + '") : renseignez-la explicitement.');
+    if (e.kind === 'network') throw new ApiError('auth', e.message + ' — la page doit être servie depuis l\'instance (même origine) ou l\'instance doit autoriser le CORS.');
+    throw new ApiError('auth', e.message);
+  }
+}
+
+/* =====================================================================
+   UI DU SCAN
+   ===================================================================== */
+const P = { phase: '', done: 0, total: 1, current: '', avgField: null, avgCount: null, fieldsLeft: 0, countsLeft: 0, extrasLeft: 0 };
+const UI = {
+  timer: null,
+  show(view) { for (const v of ['viewLogin', 'viewScan', 'viewReport']) $(v).classList.toggle('hidden', v !== view); },
+  notice(msg) { const n = $('scanNotice'); n.textContent = msg; n.classList.remove('hidden'); },
+  logReq(label, ms) {
+    const li = document.createElement('li'); li.textContent = `${label} · ${ms} ms`;
+    const ol = $('scanLog'); ol.prepend(li); while (ol.children.length > 6) ol.lastChild.remove();
+  },
+  progress() {
+    const pct = Math.min(99, Math.round((P.done / Math.max(1, P.total)) * 100));
+    $('scanBar').style.width = pct + '%'; $('scanPct').textContent = pct + ' %';
+    $('scanBarWrap').setAttribute('aria-valuenow', pct);
+    $('scanPhase').textContent = P.phase; $('scanCurrent').textContent = P.current || ' ';
+    $('stReq').textContent = fmtInt(S.endpoints.size ? [...S.endpoints.values()].reduce((a, b) => a + b, 0) : 0);
+    const elapsed = Date.now() - S.t0;
+    $('stElapsed').textContent = fmtDur(elapsed);
+    const cyc = (v, delay) => (v ?? (delay * S.prudence + 250));
+    const eta = P.fieldsLeft * cyc(P.avgField, CFG.DELAY_FIELDS_MS) + P.countsLeft * cyc(P.avgCount, CFG.DELAY_COUNT_MS) + P.extrasLeft * cyc(P.avgCount, CFG.DELAY_COUNT_MS);
+    $('stEta').textContent = eta > 0 ? '≈ ' + fmtDur(eta) : '—';
+  },
+  stats(R) {
+    const done = R.models.filter((m) => m.fieldStatus).length;
+    $('stModels').textContent = `${done}/${R.selected}`;
+    $('stFields').textContent = fmtInt(R.models.reduce((a, m) => a + (m.sensCount || 0), 0));
+    $('stRecords').textContent = fmtInt(R.models.reduce((a, m) => a + (m.sensCount && m.count ? m.count : 0), 0));
+  }
+};
+
+/* =====================================================================
+   SCAN (phase 1)
+   ===================================================================== */
+let R = null;   // rapport en cours : jamais de secret dedans
+
+function analyzeModel(m, rows) {
+  const names = new Set(rows.map((r) => r.name));
+  const sens = {}; let sensCount = 0, score = CORE_BOOST[m.model] || 0;
+  for (const f of rows) {
+    for (const r of RULES) {
+      if (r.types.includes(f.ttype) && (!r.models || r.models.includes(m.model)) && r.re.test(f.name)) {
+        (sens[r.cat] ||= []).push(f.name); sensCount++; score += r.w; break;
+      }
+    }
+  }
+  return { fieldStatus: 'ok', fieldsTotal: rows.length, truncated: rows.length >= CFG.LIMIT, sens, sensCount, score,
+           hasActive: names.has('active'), audit: names.has('message_ids'), dateField: names.has('write_date') ? 'write_date' : (names.has('create_date') ? 'create_date' : null) };
+}
+
+const errStatus = (e) => (e.kind === 'timeout' ? 'timeout' : e.kind === 'denied' ? 'denied' : 'error');
+const isAbstractErr = (e) => /abstract|does not exist|no such table/i.test(e.message || '');
+
+async function listModels() {
+  P.phase = 'Étape 1/4 — Liste des modèles'; P.current = 'ir.model'; UI.progress();
+  let rows;
+  try {
+    rows = await step(0, 'ir.model.search_read', () => api.searchRead('ir.model', [['transient', '=', false], ['abstract', '=', false]], ['model', 'name']));
+  } catch (e) {
+    if (FATAL_KINDS.includes(e.kind) || e.kind === 'denied') throw e;
+    // Champ "abstract" absent sur cette version : on retente sans (les modèles abstraits seront écartés au comptage).
+    rows = await step(CFG.DELAY_COUNT_MS, 'ir.model.search_read', () => api.searchRead('ir.model', [['transient', '=', false]], ['model', 'name']));
+  }
+  return rows;
+}
+
+function selectModels(all, mode) {
+  let list = all.filter((m) => !EXCLUDE_RE.test(m.model));
+  if (mode === 'quick') list = list.filter((m) => QUICK_PREFIXES.some((p) => m.model === p || m.model.startsWith(p + '.')));
+  const prio = (m) => { const i = QUICK_PREFIXES.findIndex((p) => m.model === p || m.model.startsWith(p + '.')); return (CORE_BOOST[m.model] || 0) * 100 + (i < 0 ? 0 : QUICK_PREFIXES.length - i); };
+  list.sort((a, b) => prio(b) - prio(a) || a.model.localeCompare(b.model));
+  return list.slice(0, CFG.MAX_MODELS[mode]);
+}
+
+async function runScan(opts) {
+  S.t0 = Date.now(); S.budget = CFG.BUDGET_MS[opts.mode];
+  R = { startedAt: new Date(), endedAt: null, instance: S.base, db: S.db, mode: opts.mode, version: opts.version, userName: opts.userName,
+        totalInstance: 0, selected: 0, models: [], users: null, logs: null, notes: [], stopReason: null, endpoints: null, durationMs: 0 };
+  Object.assign(P, { done: 0, total: 1, avgField: null, avgCount: null, fieldsLeft: 0, countsLeft: 0, extrasLeft: 0, current: '' });
+  $('scanLog').innerHTML = ''; $('scanNotice').classList.add('hidden');
+  $('btnCancel').disabled = false; $('scanTitle').textContent = '🔍 Scan en cours…';
+  UI.show('viewScan'); UI.timer = setInterval(() => UI.progress(), 1000);
+
+  try {
+    /* Étape 1 : UNE requête pour lister les modèles */
+    const all = await listModels();
+    R.totalInstance = all.length;
+    const list = selectModels(all, opts.mode);
+    R.selected = list.length;
+    R.models = list.map((m) => ({ model: m.model, name: m.name }));
+    if (opts.mode === 'quick') R.notes.push(`Mode rapide : ${list.length} modèles métier retenus sur ${all.length}.`);
+    if (all.length >= CFG.LIMIT) R.notes.push('La liste des modèles a atteint la limite de 1000 : certains modèles ne sont pas listés.');
+    P.done = 1; P.fieldsLeft = list.length;
+    P.total = 1 + list.length + Math.min(CFG.TOP_COUNT, Math.ceil(list.length * 0.6)) + 3 + (opts.mode === 'full' ? CFG.TOP_INACTIVE + CFG.TOP_LAST_ACTIVITY + 1 : 0);
+    UI.stats(R);
+
+    /* Étape 2 : champs, modèle par modèle */
+    P.phase = 'Étape 2/4 — Analyse des champs';
+    for (let i = 0; i < R.models.length; i++) {
+      const rec = R.models[i]; P.current = rec.model; UI.progress();
+      const t = Date.now();
+      try {
+        const rows = await step(CFG.DELAY_FIELDS_MS, 'ir.model.fields.search_read', () =>
+          api.searchRead('ir.model.fields', [['model', '=', rec.model], ['store', '=', true]], ['name', 'ttype']));
+        Object.assign(rec, analyzeModel(rec, rows));
+      } catch (e) {
+        if (FATAL_KINDS.includes(e.kind)) throw e;
+        rec.fieldStatus = errStatus(e); rec.error = e.message; rec.sensCount = 0;
+      }
+      P.avgField = P.avgField == null ? Date.now() - t : P.avgField * 0.8 + (Date.now() - t) * 0.2;
+      P.done++; P.fieldsLeft--; UI.stats(R); UI.progress();
+    }
+
+    /* Étape 3 : comptages, top 50 par pertinence RGPD */
+    const candidates = R.models.filter((m) => m.fieldStatus === 'ok' && m.sensCount > 0).sort((a, b) => b.score - a.score);
+    const toCount = candidates.slice(0, CFG.TOP_COUNT);
+    candidates.slice(CFG.TOP_COUNT).forEach((m) => { m.countStatus = 'not_counted'; });
+    P.total = P.done + toCount.length + 3 + (opts.mode === 'full' ? Math.min(CFG.TOP_INACTIVE, toCount.length) + Math.min(CFG.TOP_LAST_ACTIVITY, toCount.length) + 1 : 0);
+    P.countsLeft = toCount.length; P.phase = 'Étape 3/4 — Comptage des enregistrements';
+    for (const rec of toCount) {
+      P.current = rec.model; UI.progress();
+      const t = Date.now();
+      try {
+        rec.count = await step(CFG.DELAY_COUNT_MS, 'search_count', () => api.searchCount(rec.model, rec.hasActive ? [['active', '=', true]] : []));
+        rec.countStatus = 'ok';
+      } catch (e) {
+        if (FATAL_KINDS.includes(e.kind)) throw e;
+        if (isAbstractErr(e)) { rec.abstract = true; rec.countStatus = 'abstract'; }
+        else { rec.countStatus = errStatus(e); rec.error = e.message; }
+      }
+      P.avgCount = P.avgCount == null ? Date.now() - t : P.avgCount * 0.8 + (Date.now() - t) * 0.2;
+      P.done++; P.countsLeft--; UI.stats(R); UI.progress();
+    }
+
+    /* Étape 4 : métadonnées */
+    P.phase = 'Étape 4/4 — Métadonnées'; P.extrasLeft = 2 + (opts.mode === 'full' ? 1 : 0);
+    R.users = {};
+    for (const [key, dom] of [['active', [['active', '=', true]]], ['inactive', [['active', '=', false]]]]) {
+      P.current = 'res.users (' + key + ')'; UI.progress();
+      try { R.users[key] = await step(CFG.DELAY_COUNT_MS, 'search_count', () => api.searchCount('res.users', dom)); }
+      catch (e) { if (FATAL_KINDS.includes(e.kind)) throw e; R.users[key] = null; }
+      P.done++; P.extrasLeft--; UI.progress();
+    }
+
+    if (opts.mode === 'full') {
+      const counted = toCount.filter((m) => m.countStatus === 'ok').sort((a, b) => b.count - a.count);
+      // Archivés : ils contiennent toujours des données personnelles (enjeu de durée de conservation)
+      P.extrasLeft += Math.min(CFG.TOP_INACTIVE, counted.length) + Math.min(CFG.TOP_LAST_ACTIVITY, counted.length);
+      for (const rec of counted.filter((m) => m.hasActive).slice(0, CFG.TOP_INACTIVE)) {
+        P.current = 'archivés · ' + rec.model; UI.progress();
+        try { rec.countInactive = await step(CFG.DELAY_COUNT_MS, 'search_count', () => api.searchCount(rec.model, [['active', '=', false]])); }
+        catch (e) { if (FATAL_KINDS.includes(e.kind)) throw e; }
+        P.done++; P.extrasLeft--; UI.progress();
+      }
+      // Dernière activité : tri sur l'id (index primaire) plutôt que write_date (non indexé, coûteux sur grosses tables)
+      for (const rec of counted.filter((m) => m.dateField).slice(0, CFG.TOP_LAST_ACTIVITY)) {
+        P.current = 'dernière activité · ' + rec.model; UI.progress();
+        try {
+          const r = await step(CFG.DELAY_COUNT_MS, 'search_read(id desc, limit 1)', () => api.searchRead(rec.model, [], [rec.dateField], { limit: 1, order: 'id desc' }));
+          rec.lastUpdate = r && r[0] ? r[0][rec.dateField] : null;
+        } catch (e) { if (FATAL_KINDS.includes(e.kind)) throw e; }
+        P.done++; P.extrasLeft--; UI.progress();
+      }
+      // Logs d'accès : tentative silencieuse
+      P.current = 'ir.logging'; UI.progress();
+      try {
+        R.logs = await step(CFG.DELAY_COUNT_MS, 'ir.logging.search_read', () => api.searchRead('ir.logging', [], ['create_date', 'level', 'name'], { limit: 10, order: 'id desc' }));
+      } catch (e) { if (FATAL_KINDS.includes(e.kind)) throw e; R.logs = null; }
+      P.done++; P.extrasLeft--;
+    }
+  } catch (e) {
+    if (FATAL_KINDS.includes(e.kind)) {
+      R.stopReason = e.kind === 'abort' ? 'Scan interrompu par l\'utilisateur.'
+        : e.kind === 'budget' ? `Durée maximale atteinte (${fmtDur(S.budget)}) : résultats partiels.`
+        : e.message + '.';
+      R.stopKind = e.kind;
+    } else { R.stopReason = 'Erreur inattendue : ' + e.message; R.stopKind = 'error'; console.error(e); }
+  } finally {
+    clearInterval(UI.timer);
+    R.endedAt = new Date(); R.durationMs = R.endedAt - R.startedAt;
+    R.endpoints = new Map(S.endpoints);
+    destroySession();                       // le secret disparaît ici, quoi qu'il arrive
+    $('btnCancel').disabled = true;
+  }
+  return R;
+}
+
+/* =====================================================================
+   RAPPORT (phase 2)
+   ===================================================================== */
+const PAL = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#86BC86'];
+let charts = [];
+
+function computeStats(R) {
+  const ok = R.models.filter((m) => m.fieldStatus === 'ok');
+  const sensitive = ok.filter((m) => m.sensCount > 0);
+  const counted = sensitive.filter((m) => m.countStatus === 'ok');
+  const cats = {};
+  sensitive.forEach((m) => Object.entries(m.sens).forEach(([c, f]) => { cats[c] = (cats[c] || 0) + f.length; }));
+  return {
+    ok, sensitive, counted, cats,
+    scanned: R.models.filter((m) => m.fieldStatus).length,
+    sensFields: sensitive.reduce((a, m) => a + m.sensCount, 0),
+    records: counted.reduce((a, m) => a + m.count, 0),
+    audit: sensitive.filter((m) => m.audit).length,
+    noAudit: sensitive.filter((m) => !m.audit),
+    denied: R.models.filter((m) => m.fieldStatus === 'denied' || m.countStatus === 'denied'),
+    timeouts: R.models.filter((m) => m.fieldStatus === 'timeout' || m.countStatus === 'timeout'),
+    errors: R.models.filter((m) => m.fieldStatus === 'error' || m.countStatus === 'error'),
+    notScanned: R.models.filter((m) => !m.fieldStatus),
+    coverage: R.selected ? Math.round((ok.length / R.selected) * 100) : 0,
+    special: sensitive.filter((m) => ['Santé', 'Vie privée / état civil', 'Bancaire', 'Identifiants officiels'].some((c) => m.sens[c]))
+  };
+}
+
+function statusBadge(m) {
+  if (!m.fieldStatus) return '<span class="text-slate-500">Non scanné</span>';
+  if (m.fieldStatus === 'denied' || m.countStatus === 'denied') return '<span class="text-red-700">⛔ Accès refusé</span>';
+  if (m.fieldStatus === 'timeout' || m.countStatus === 'timeout') return '<span class="text-amber-700">⚠️ Timeout</span>';
+  if (m.fieldStatus === 'error' || m.countStatus === 'error') return '<span class="text-amber-700">⚠️ Erreur</span>';
+  if (m.countStatus === 'not_counted') return '<span class="text-slate-600">◐ Non compté</span>';
+  if (m.countStatus === 'abstract') return '<span class="text-slate-600">— Abstrait</span>';
+  return '<span class="text-green-700">✓ Complet</span>';
+}
+
+const card = (label, value, sub, tone = '') => `
+  <div class="pb rounded-lg border border-slate-200 p-4 ${tone}">
+    <div class="text-xs text-slate-600">${label}</div>
+    <div class="text-2xl font-semibold tnum mt-1">${value}</div>
+    <div class="text-xs text-slate-500 mt-1">${sub || '&nbsp;'}</div>
+  </div>`;
+
+const alertLi = (icon, html) => `<li class="pb flex gap-2"><span aria-hidden="true">${icon}</span><span>${html}</span></li>`;
+const listNames = (arr, n = 15) => arr.slice(0, n).map((m) => `<code>${esc(m.model)}</code>`).join(', ') + (arr.length > n ? ` … (+${arr.length - n})` : '');
+
+function buildReportHtml(R, st) {
+  const partial = !!R.stopReason || st.coverage < 100 || st.timeouts.length || st.denied.length;
+  const rows = [...st.sensitive].sort((a, b) => (b.count ?? -1) - (a.count ?? -1) || b.score - a.score);
+  const shown = rows.filter((m) => m.countStatus !== 'not_counted').slice(0, 50);
+  const notCounted = rows.filter((m) => m.countStatus === 'not_counted');
+  const failed = R.models.filter((m) => m.fieldStatus && m.fieldStatus !== 'ok');
+  const tableRows = [...shown, ...failed.slice(0, Math.max(0, 50 - shown.length))];
+
+  const hasLogs = R.logs && R.logs.length > 0;
+  const logDays = hasLogs ? new Set(R.logs.map((l) => String(l.create_date).slice(0, 10))).size : 0;
+  const inactiveTotal = R.users && R.users.inactive;
+  const archivedModels = st.counted.filter((m) => m.countInactive > 0).sort((a, b) => b.countInactive - a.countInactive);
+
+  const alerts = [];
+  if (R.stopReason) alerts.push(alertLi('⚠️', `<b>Scan partiel</b> : ${esc(R.stopReason)}`));
+  if (st.notScanned.length) alerts.push(alertLi('⚠️', `<b>${st.notScanned.length} modèle(s) non scannés</b> (scan arrêté avant la fin) : ${listNames(st.notScanned)}`));
+  if (st.denied.length) alerts.push(alertLi('⚠️', `<b>Modèles inaccessibles (permissions manquantes)</b> : ${listNames(st.denied)}`));
+  if (st.timeouts.length) alerts.push(alertLi('⚠️', `<b>Timeouts (${CFG.REQ_TIMEOUT_MS / 1000} s)</b>, instance occupée : ${listNames(st.timeouts)}. Relancez hors heures de pointe avec la prudence renforcée.`));
+  if (st.errors.length) alerts.push(alertLi('⚠️', `<b>Erreurs</b> sur : ${listNames(st.errors)}`));
+  if (!R.stopReason && st.coverage >= 90 && !st.denied.length && !st.timeouts.length)
+    alerts.push(alertLi('✅', `<b>Couverture bonne</b> : ${st.coverage} % des modèles retenus ont été analysés.`));
+  if (st.sensitive.length) {
+    if (st.noAudit.length === 0) alerts.push(alertLi('✅', '<b>Traçabilité</b> : tous les modèles sensibles héritent de <code>mail.thread</code> (chatter).'));
+    else alerts.push(alertLi('ℹ️', `<b>${st.noAudit.length} modèle(s) sensibles sans chatter</b> (pas de <code>message_ids</code>) : les modifications n'y sont pas tracées nativement — ${listNames(st.noAudit.sort((a, b) => b.score - a.score), 8)}`));
+  }
+  if (st.special.length) alerts.push(alertLi('⚠️', `<b>Catégories particulières</b> (santé, vie privée, bancaire, identifiants officiels) présentes dans ${st.special.length} modèle(s) : ${listNames(st.special, 8)}. Vérifiez les droits d'accès et la base légale.`));
+  if (inactiveTotal > 0) alerts.push(alertLi('ℹ️', `<b>${fmtInt(inactiveTotal)} utilisateur(s) archivé(s)</b> à revoir (suppression/anonymisation si plus nécessaires).`));
+  if (archivedModels.length) alerts.push(alertLi('ℹ️', `<b>Enregistrements archivés</b> (toujours porteurs de données personnelles) : ${archivedModels.slice(0, 5).map((m) => `<code>${esc(m.model)}</code> ${fmtInt(m.countInactive)}`).join(', ')}. Définissez une durée de conservation.`));
+  if (R.mode === 'full' && !hasLogs) alerts.push(alertLi('ℹ️', 'Logs (<code>ir.logging</code>) non lisibles avec ce compte ou vides : section chronologie omise.'));
+  const anyTrunc = st.ok.filter((m) => m.truncated);
+  if (anyTrunc.length) alerts.push(alertLi('ℹ️', `Liste de champs tronquée à ${CFG.LIMIT} pour : ${listNames(anyTrunc, 5)}.`));
+
+  const catChips = Object.entries(st.cats).sort((a, b) => b[1] - a[1])
+    .map(([c, n]) => `<span class="inline-block rounded-full bg-slate-100 border border-slate-200 text-xs px-2.5 py-1 mr-1 mb-1">${esc(c)} <b class="tnum">${n}</b></span>`).join('');
+
+  const endpointRows = [...R.endpoints.entries()].map(([k, n]) => `<li><code>${esc(k)}</code> × <span class="tnum">${n}</span></li>`).join('');
+  const ruleRows = RULES.map((r) => `<tr class="border-t border-slate-100"><td class="py-1 pr-3 align-top whitespace-nowrap">${esc(r.cat)}${r.models ? ' <span class="text-slate-500">(modèles personnels)</span>' : ''}</td><td class="py-1 break-all"><code>${esc(r.re.source)}</code></td></tr>`).join('');
+
+  return `
+  <div class="pb">
+    <h2 class="text-xl font-semibold">Rapport RGPD — inventaire technique des données personnelles</h2>
+    <dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-sm">
+      <div class="flex gap-2"><dt class="text-slate-600">Date du scan</dt><dd>${esc(R.startedAt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }))}</dd></div>
+      <div class="flex gap-2"><dt class="text-slate-600">Durée</dt><dd>${fmtDur(R.durationMs)}</dd></div>
+      <div class="flex gap-2"><dt class="text-slate-600">Instance</dt><dd class="break-all">${esc(R.instance)}</dd></div>
+      <div class="flex gap-2"><dt class="text-slate-600">Mode</dt><dd>${R.mode === 'full' ? 'Complet' : 'Rapide'}</dd></div>
+      <div class="flex gap-2"><dt class="text-slate-600">Base</dt><dd>${esc(R.db || '-')}</dd></div>
+      <div class="flex gap-2"><dt class="text-slate-600">Version Odoo</dt><dd>${esc(R.version || 'inconnue')}</dd></div>
+    </dl>
+    <p class="mt-3 text-xs text-slate-600">Certains modèles peuvent être inaccessibles (permissions). Rapport partiel accepté.
+      Inventaire fondé sur les <i>noms</i> de champs : il aide à alimenter le registre des traitements (art. 30) mais ne remplace pas une analyse juridique.</p>
+    ${partial ? `<p class="mt-3 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm p-3">⚠️ Rapport partiel — ${st.coverage} % de couverture${st.timeouts.length ? `, ${st.timeouts.length} modèle(s) en timeout` : ''}${st.denied.length ? `, ${st.denied.length} modèle(s) inaccessible(s)` : ''}. ${esc(R.stopReason || '')} Détails en section 4.</p>` : ''}
+  </div>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-3">1. Synthèse RGPD</h3>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      ${card('Modèles scannés', `${fmtInt(st.scanned)} <span class="text-base font-normal text-slate-500">/ ${fmtInt(R.totalInstance)}</span>`, `${fmtInt(R.selected)} retenus · ${fmtInt(R.totalInstance - R.selected)} exclus (techniques${R.mode === 'quick' ? ' / hors périmètre rapide' : ''})`)}
+      ${card('Champs sensibles détectés', fmtInt(st.sensFields), `dans ${st.sensitive.length} modèle(s), ${Object.keys(st.cats).length} catégorie(s)`)}
+      ${card('Enregistrements concernés', fmtInt(st.records), `somme sur ${st.counted.length} modèle(s) à champs sensibles (actifs)`)}
+      ${card('Utilisateurs actifs / inactifs', `${fmtInt(R.users && R.users.active)} <span class="text-base font-normal text-slate-500">/ ${fmtInt(R.users && R.users.inactive)}</span>`, 'res.users (archivés = inactifs)')}
+      ${card('Audit trail (chatter)', `${st.audit} <span class="text-base font-normal text-slate-500">/ ${st.noAudit.length}</span>`, 'modèles sensibles avec / sans mail.thread')}
+      ${card('Couverture', st.coverage + ' %', st.coverage < 100 ? 'scan partiel' : 'tous les modèles retenus analysés', st.coverage < 80 ? 'bg-amber-50' : '')}
+    </div>
+    <p class="pb mt-3 text-xs text-slate-600">« Enregistrements concernés » est un majorant : un modèle comptabilisé contient des champs sensibles mais tous ses enregistrements ne les renseignent pas nécessairement. Seuls les ${CFG.TOP_COUNT} modèles les plus pertinents sont comptés.</p>
+    <div class="pb mt-3">${catChips || '<span class="text-sm text-slate-500">Aucun champ sensible détecté.</span>'}</div>
+  </section>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-3">2. Inventaire des données sensibles</h3>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border-collapse">
+      <thead><tr class="bg-slate-100 text-left">
+        <th class="p-2 font-semibold w-48">Modèle</th><th class="p-2 font-semibold">Champs sensibles</th>
+        <th class="p-2 font-semibold text-right">Enregistrements</th><th class="p-2 font-semibold">Dernière MAJ</th><th class="p-2 font-semibold">Statut</th></tr></thead>
+      <tbody>
+      ${tableRows.map((m) => {
+        const fields = Object.values(m.sens || {}).flat();
+        const cnt = m.count != null ? fmtInt(m.count) + (m.countInactive ? `<div class="text-slate-500">+${fmtInt(m.countInactive)} archivés</div>` : '') : (m.countStatus === 'timeout' ? 'N/A' : m.countStatus === 'not_counted' ? '—' : 'N/A');
+        return `<tr class="border-t border-slate-200 align-top">
+          <td class="p-2 break-all"><code>${esc(m.model)}</code><div class="text-slate-500">${esc(m.name)}</div></td>
+          <td class="p-2 break-words">${fields.length ? esc(fields.slice(0, 10).join(', ')) + (fields.length > 10 ? ` … (+${fields.length - 10})` : '') : '-'}</td>
+          <td class="p-2 text-right tnum whitespace-nowrap">${cnt}</td>
+          <td class="p-2 whitespace-nowrap">${esc(fmtDate(m.lastUpdate))}</td>
+          <td class="p-2 whitespace-nowrap">${statusBadge(m)}</td></tr>`;
+      }).join('') || '<tr><td colspan="5" class="p-3 text-slate-500">Aucun modèle avec champs sensibles.</td></tr>'}
+      </tbody>
+    </table></div>
+    ${notCounted.length ? `<p class="pb mt-2 text-xs text-slate-600"><b>${notCounted.length} autre(s) modèle(s)</b> avec champs sensibles, non comptés (hors top ${CFG.TOP_COUNT}) : ${listNames(notCounted, 25)}</p>` : ''}
+    ${R.mode === 'full' ? '<p class="pb mt-2 text-xs text-slate-500">« Dernière MAJ » : date d\'écriture du dernier enregistrement créé (tri sur l\'id, pour ne pas solliciter la base).</p>' : ''}
+  </section>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-3">3. Graphiques</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="pb"><p class="text-sm font-medium mb-2">Répartition des enregistrements (top 10)</p><div class="relative" style="height:260px"><canvas id="chPie" role="img" aria-label="Répartition des enregistrements par modèle"></canvas></div></div>
+      <div class="pb"><p class="text-sm font-medium mb-2">Champs sensibles par modèle (top 10)</p><div class="relative" style="height:260px"><canvas id="chBar" role="img" aria-label="Champs sensibles par modèle"></canvas></div></div>
+    </div>
+    ${hasLogs && logDays >= 2 ? `<div class="pb mt-6"><p class="text-sm font-medium mb-2">Chronologie des derniers événements (ir.logging)</p><div class="relative" style="height:200px"><canvas id="chTime" role="img" aria-label="Chronologie des logs"></canvas></div></div>` : ''}
+  </section>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-3">4. Alertes &amp; recommandations</h3>
+    <ul class="space-y-2 text-sm">${alerts.join('') || '<li class="text-slate-500">Rien à signaler.</li>'}</ul>
+  </section>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-3">5. Documentation</h3>
+    <div class="space-y-4 text-sm">
+      <div class="pb"><p class="font-medium">Champs reconnus comme sensibles</p>
+        <table class="w-full text-xs mt-1"><tbody>${ruleRows}</tbody></table></div>
+      <div class="pb"><p class="font-medium">Endpoints utilisés (${S.transport === 'json2' ? 'POST /json/2/{modèle}/{méthode}' : 'POST /jsonrpc — object.execute_kw'})</p>
+        <ul class="list-disc pl-5 text-xs mt-1">${endpointRows}</ul>
+        <p class="text-xs text-slate-500 mt-1">Une requête à la fois, ${CFG.DELAY_FIELDS_MS} ms (champs) / ${CFG.DELAY_COUNT_MS} ms (compteurs) d'écart minimum, timeout ${CFG.REQ_TIMEOUT_MS / 1000} s, limit ${CFG.LIMIT}, domaines simples.</p></div>
+      <div class="pb"><p class="font-medium">Pourquoi certains modèles manquent ?</p>
+        <ul class="list-disc pl-5 text-xs mt-1 space-y-1">
+          <li><b>Permissions</b> : le compte utilisé n'a pas le droit de lecture sur le modèle (ou <code>ir.model</code>).</li>
+          <li><b>Timeout</b> : une requête dépassant ${CFG.REQ_TIMEOUT_MS / 1000} s est abandonnée côté navigateur (le serveur peut la terminer) ; les délais sont alors multipliés (jusqu'à ×${CFG.BACKOFF_MAX}) et le scan s'arrête après ${CFG.STOP_AFTER_CONSEC_FAIL} échecs consécutifs.</li>
+          <li><b>Périmètre</b> : modèles techniques exclus (<code>base, ir, mail, web, website, theme</code>, assistants, rapports…) ; en mode rapide, seuls les modèles métier sont analysés.</li>
+          <li><b>Budget de temps</b> : ${fmtDur(CFG.BUDGET_MS.quick)} (rapide) / ${fmtDur(CFG.BUDGET_MS.full)} (complet), au-delà le rapport est partiel.</li>
+          <li><b>Sécurité</b> : la clé API a été effacée de la mémoire de la page à la fin du scan.</li>
+        </ul></div>
+    </div>
+  </section>`;
+}
+
+function drawCharts(R, st) {
+  charts.forEach((c) => c.destroy()); charts = [];
+  const common = { animation: false, responsive: true, maintainAspectRatio: false };
+  const byCount = [...st.counted].sort((a, b) => b.count - a.count);
+  const top = byCount.slice(0, 10), rest = byCount.slice(10).reduce((a, m) => a + m.count, 0);
+  const labels = top.map((m) => m.model), data = top.map((m) => m.count), colors = top.map((_, i) => PAL[i % PAL.length]);
+  if (rest > 0) { labels.push('Autres'); data.push(rest); colors.push('#BAB0AC'); }
+  if (data.length) charts.push(new Chart($('chPie'), { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 1 }] },
+    options: { ...common, plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } } } } }));
+  else $('chPie').parentElement.innerHTML = '<p class="text-sm text-slate-500">Aucun comptage disponible.</p>';
+
+  const bars = [...st.sensitive].sort((a, b) => b.sensCount - a.sensCount).slice(0, 10);
+  if (bars.length) charts.push(new Chart($('chBar'), { type: 'bar', data: { labels: bars.map((m) => m.model), datasets: [{ data: bars.map((m) => m.sensCount), backgroundColor: '#714B67' }] },
+    options: { ...common, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { precision: 0 } }, y: { ticks: { font: { size: 10 } } } } } }));
+  else $('chBar').parentElement.innerHTML = '<p class="text-sm text-slate-500">Aucun champ sensible.</p>';
+
+  if ($('chTime')) {
+    const perDay = {};
+    R.logs.forEach((l) => { const d = String(l.create_date).slice(0, 10); perDay[d] = (perDay[d] || 0) + 1; });
+    const days = Object.keys(perDay).sort();
+    charts.push(new Chart($('chTime'), { type: 'bar', data: { labels: days, datasets: [{ data: days.map((d) => perDay[d]), backgroundColor: '#4E79A7' }] },
+      options: { ...common, plugins: { legend: { display: false } }, scales: { y: { ticks: { precision: 0 } } } } }));
+  }
+}
+
+function renderReport(R) {
+  const st = computeStats(R);
+  R._st = st;
+  $('reportContent').innerHTML = buildReportHtml(R, st);
+  UI.show('viewReport'); drawCharts(R, st);
+  $('btnPdf').disabled = false; $('actionMsg').textContent = '';
+}
+
+function reportText(R) {
+  const st = R._st;
+  const L = [`RAPPORT RGPD — ${R.instance}`, `Date : ${R.startedAt.toLocaleString('fr-FR')} · Mode : ${R.mode === 'full' ? 'Complet' : 'Rapide'} · Durée : ${fmtDur(R.durationMs)}`, ''];
+  if (R.stopReason) L.push('⚠ Rapport partiel : ' + R.stopReason, '');
+  L.push(`Modèles scannés : ${st.scanned}/${R.totalInstance} (couverture ${st.coverage} %)`,
+    `Champs sensibles : ${st.sensFields} dans ${st.sensitive.length} modèle(s)`,
+    `Enregistrements concernés (majorant) : ${fmtInt(st.records)}`,
+    `Utilisateurs actifs/inactifs : ${fmtInt(R.users && R.users.active)}/${fmtInt(R.users && R.users.inactive)}`,
+    `Audit trail : ${st.audit} avec / ${st.noAudit.length} sans`, '', 'Modèle | Champs sensibles | Enregistrements | Dernière MAJ | Statut');
+  st.sensitive.sort((a, b) => (b.count ?? -1) - (a.count ?? -1)).slice(0, 50).forEach((m) =>
+    L.push([m.model, Object.values(m.sens).flat().join(', '), m.count != null ? m.count : 'N/A', fmtDate(m.lastUpdate), m.countStatus === 'ok' ? 'Complet' : (m.countStatus || m.fieldStatus)].join(' | ')));
+  return L.join('\n');
+}
+
+/* =====================================================================
+   EXPORT PDF (phase 3) — capture à 794 px (A4), découpe aux frontières d'éléments
+   ===================================================================== */
+async function exportPdf() {
+  const btn = $('btnPdf'); btn.disabled = true; btn.textContent = 'Génération…';
+  let stage = null;
+  try {
+    const { jsPDF } = window.jspdf;
+    const clone = $('reportContent').cloneNode(true);
+    clone.querySelectorAll('.no-pdf').forEach((n) => n.remove());
+    clone.querySelectorAll('canvas').forEach((cv) => {
+      const ch = Chart.getChart(cv.id); if (!ch) return;
+      const img = new Image(); img.src = ch.toBase64Image(); img.style.cssText = 'width:100%;height:auto;display:block';
+      cv.parentElement.style.height = 'auto'; cv.replaceWith(img);
+    });
+    clone.classList.remove('rounded-lg', 'border');
+    stage = document.createElement('div');
+    stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:794px;background:#fff;color:#0f172a';
+    stage.appendChild(clone); document.body.appendChild(stage);
+    await Promise.all([...stage.querySelectorAll('img')].map((i) => i.decode().catch(() => {})));
+    await new Promise((r) => setTimeout(r, 200));   // laisse Tailwind (CDN) styliser le clone
+
+    const scale = Math.max(1, Math.min(2, 16000 / stage.scrollHeight));
+    const top = stage.getBoundingClientRect().top;
+    const bounds = [...stage.querySelectorAll('.pb, tr')].map((e) => (e.getBoundingClientRect().bottom - top) * scale).sort((a, b) => a - b);
+    const canvas = await html2canvas(stage, { scale, backgroundColor: '#ffffff', logging: false, windowWidth: 794 });
+
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const M = 10, W = 190, H = 273;                    // marges 10 mm, zone utile 190×273 mm, pied de page en bas
+    const ppm = canvas.width / W, pagePx = Math.floor(H * ppm);
+    const slices = [];
+    for (let y = 0; y < canvas.height - 1;) {
+      let end = Math.min(y + pagePx, canvas.height);
+      if (end < canvas.height) { let cut = 0; for (const b of bounds) if (b > y + pagePx * 0.3 && b <= end) cut = b; if (cut) end = Math.round(cut); }
+      slices.push([y, end]); y = end;
+    }
+    const tmp = document.createElement('canvas'); tmp.width = canvas.width;
+    const ctx = tmp.getContext('2d');
+    const day = isoDay(new Date()), host = (() => { try { return new URL(R.instance).hostname; } catch (_) { return 'instance'; } })();
+    slices.forEach(([y0, y1], i) => {
+      if (i) pdf.addPage();
+      tmp.height = y1 - y0; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, tmp.width, tmp.height);
+      ctx.drawImage(canvas, 0, y0, canvas.width, y1 - y0, 0, 0, canvas.width, y1 - y0);
+      pdf.addImage(tmp.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, W, (y1 - y0) / ppm);
+      pdf.setFontSize(8); pdf.setTextColor(120);
+      pdf.text(`Rapport RGPD - ${host} - ${day}`, M, 290);
+      pdf.text(`Page ${i + 1}/${slices.length}`, M + W, 290, { align: 'right' });
+    });
+    pdf.save(`RGPD-Report-${host.replace(/[^a-z0-9.-]/gi, '-')}-${day}.pdf`);
+    $('actionMsg').textContent = 'PDF généré.';
+  } catch (e) {
+    console.error(e); $('actionMsg').textContent = 'Échec de génération du PDF : ' + e.message;
+  } finally {
+    if (stage) stage.remove();
+    btn.disabled = false; btn.textContent = 'Exporter en PDF';
+  }
+}
+
+async function copyReport() {
+  const text = reportText(R);
+  try { await navigator.clipboard.writeText(text); $('actionMsg').textContent = 'Rapport copié.'; }
+  catch (_) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); $('actionMsg').textContent = 'Rapport copié.'; } catch (e) { $('actionMsg').textContent = 'Copie impossible.'; }
+    ta.remove();
+  }
+}
+
+/* =====================================================================
+   FORMULAIRE
+   ===================================================================== */
+function loginError(msg) { const e = $('loginError'); e.textContent = msg; e.classList.remove('hidden'); }
+const isLocal = (h) => h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost');
+
+function normalizeBase(raw) {
+  let v = raw.trim(); if (!v) return location.protocol.startsWith('http') ? location.origin : '';
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+  try { return new URL(v).origin; } catch (_) { return ''; }
+}
+
+function checkHttps() {
+  const base = normalizeBase($('baseUrl').value);
+  const insecure = base.startsWith('http://') && !isLocal(new URL(base).hostname);
+  $('httpsWarn').classList.toggle('hidden', !insecure);
+  return insecure;
+}
+
+async function onSubmit(ev) {
+  ev.preventDefault();
+  $('loginError').classList.add('hidden');
+  const key = $('apiKey').value.trim(), uid = parseInt($('userId').value, 10), base = normalizeBase($('baseUrl').value);
+  if (!key) return loginError('Renseignez la clé API.');
+  if (!(uid > 0)) return loginError('Renseignez un User ID valide (nombre entier).');
+  if (!base) return loginError('URL invalide : renseignez l\'URL de l\'instance (ex : https://mon-instance.odoo.com).');
+  if (checkHttps() && !$('httpOk').checked) return loginError('Connexion HTTP non chiffrée : cochez la case de confirmation ou utilisez HTTPS.');
+
+  const btn = $('btnScan'); btn.disabled = true; btn.textContent = 'Vérification…';
+  resetSession();
+  const opts = { key, uid, base, db: $('dbName').value.trim(), transport: $('transport').value,
+                 prudence: parseInt($('prudence').value, 10) || 1, mode: document.querySelector('input[name=mode]:checked').value };
+  S.t0 = Date.now(); S.budget = CFG.BUDGET_MS[opts.mode];
+  try {
+    const info = await authenticate(opts);
+    opts.version = info.version; opts.userName = info.userName;
+  } catch (e) {
+    destroySession();                       // échec : on oublie la clé et on réinitialise
+    $('userId').value = '';
+    loginError(e.kind === 'auth' ? e.message : 'Échec de connexion : ' + e.message);
+    btn.disabled = false; btn.textContent = 'Scanner'; return;
+  }
+  btn.disabled = false; btn.textContent = 'Scanner';
+  $('apiKey').value = '';                   // la clé n'existe plus que dans S.token
+  const res = await runScan(opts);
+  if (res.models.length) renderReport(res);
+  else { UI.show('viewLogin'); loginError(res.stopReason || 'Le scan n\'a produit aucun résultat.'); }
+}
+
+function again() {
+  charts.forEach((c) => c.destroy()); charts = []; R = null; resetSession();
+  $('reportContent').innerHTML = ''; $('apiKey').value = ''; $('userId').value = '';
+  $('loginError').classList.add('hidden'); UI.show('viewLogin');
+}
+
+$('loginForm').addEventListener('submit', onSubmit);
+$('btnCancel').addEventListener('click', () => { $('btnCancel').disabled = true; $('scanTitle').textContent = 'Arrêt en cours…'; destroySession(); });
+$('btnPdf').addEventListener('click', exportPdf);
+$('btnCopy').addEventListener('click', copyReport);
+$('btnAgain').addEventListener('click', again);
+$('baseUrl').addEventListener('input', checkHttps);
+if (location.protocol.startsWith('http')) $('baseUrl').placeholder = location.origin;
+window.addEventListener('pagehide', destroySession);
+</script>
+</body>
+</html>
